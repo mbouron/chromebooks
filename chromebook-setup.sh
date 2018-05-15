@@ -523,6 +523,83 @@ cmd_deploy_kernel()
     cmd_eject_storage
 }
 
+# -----------------------------------------------------------------------------
+# Arch Linux Gru support
+
+cmd_format_arch_storage()
+{
+    # Skip this command if is not a media device.
+    if ! $storage_is_media_device; then return 0; fi
+
+    echo "Creating partitions on $CB_SETUP_STORAGE"
+    df 2>&1 | grep "$CB_SETUP_STORAGE" || true
+    read -p "Continue? [N/y] " yn
+    [ "$yn" = "y" ] || {
+        echo "Aborted"
+        exit 1
+    }
+
+    # Unmount any partitions automatically mounted
+    sudo umount "$CB_SETUP_STORAGE"? || true
+
+    # Clear the partition table
+    sudo sgdisk -Z "$CB_SETUP_STORAGE"
+
+    # Create the boot partition and set it as bootable
+    sudo sgdisk -n 1:0:+32M -t 1:7f00 "$CB_SETUP_STORAGE"
+
+    # Set special metadata understood by the Chromebook.  These flags
+    # are not standard thus do not have names.  For more details, see
+    # the cgpt sources which can be found in vboot_reference chromiumos
+    # repository.
+    sudo sgdisk -A 1:set:48 -A 1:set:56 "$CB_SETUP_STORAGE"
+
+    # Create and format the root partition
+    sudo sgdisk -n 2:0:+5G -t 2:7f01 "$CB_SETUP_STORAGE"
+    sudo mkfs.ext4 -L ROOT-A "$CB_SETUP_STORAGE"2
+
+    sudo sgdisk -n 3:0:+0 -t 3:7f00 "$CB_SETUP_STORAGE"
+    sudo mkfs.ext4 -L HOME-A "$CB_SETUP_STORAGE"3
+
+    echo "Done."
+}
+
+cmd_setup_arch_rootfs()
+{
+    local arch_url="http://os.archlinuxarm.org/os/ArchLinuxARM-gru-latest.tar.gz"
+    local arch_archive=$(basename $arch_url)
+
+    if [ ! -f "$arch_archive" ]; then
+        echo "Rootfs archive not found, downloading from $arch_url"
+        wget "$arch_url"
+    fi
+
+    # Untar the rootfs archive.
+    echo "Extracting files onto the partition"
+    sudo bsdtar xf "$arch_archive" -C "$ROOTFS_DIR"
+
+    echo "Done."
+}
+
+cmd_setup_arch_gru_kernel()
+{
+    local boot="$CB_SETUP_STORAGE"1
+
+    echo "Installing gru kernel"
+    sudo dd if="$ROOTFS_DIR/boot/vmlinux.kpart" of="$boot" bs=4M
+
+    echo "Done"
+}
+
+cmd_deploy_arch_linux()
+{
+    cmd_format_arch_storage
+    cmd_mount_rootfs
+    cmd_setup_arch_rootfs
+    cmd_setup_arch_gru_kernel
+    cmd_eject_storage
+}
+
 # Run the command if it's valid, otherwise abort
 type cmd_$cmd > /dev/null 2>&1 || print_usage_exit
 cmd_$cmd $@
