@@ -289,12 +289,21 @@ arm64_boot_image_blob()
                         compression = \"none\";
                         fdt-version = <1>;
                 };
+                fdt@2{
+                        description = \"rk3399-gru-bob\";
+                        data = /incbin/(\"arch/arm64/boot/dts/rockchip/rk3399-gru-bob.dtb\");
+                        type = \"flat_dt\";
+                        arch = \"arm64\";
+                        compression = \"none\";
+                        fdt-version = <1>;
+                };
+
         };
         configurations {
                 default = \"conf@1\";
                 conf@1{
                         kernel = \"kernel@1\";
-                        fdt = \"fdt@1\";
+                        fdt = \"fdt@2\";
                 };
         };
     };"
@@ -332,7 +341,7 @@ cmd_format_storage()
     sudo sgdisk -Z "$CB_SETUP_STORAGE"
 
     # Create the boot partition and set it as bootable
-    sudo sgdisk -n 1:0:+16M -t 1:7f00 "$CB_SETUP_STORAGE"
+    sudo sgdisk -n 1:0:+32M -t 1:7f00 "$CB_SETUP_STORAGE"
 
     # Set special metadata understood by the Chromebook.  These flags
     # are not standard thus do not have names.  For more details, see
@@ -341,8 +350,11 @@ cmd_format_storage()
     sudo sgdisk -A 1:set:48 -A 1:set:56 "$CB_SETUP_STORAGE"
 
     # Create and format the root partition
-    sudo sgdisk -n 2:0:0 -t 2:7f01 "$CB_SETUP_STORAGE"
+    sudo sgdisk -n 2:0:+4G -t 2:7f01 "$CB_SETUP_STORAGE"
     sudo mkfs.ext4 -L ROOT-A "$CB_SETUP_STORAGE"2
+
+    sudo sgdisk -n 3:0:+0 -t 3:7f00 "$CB_SETUP_STORAGE"
+    sudo mkfs.ext4 -L HOME-A "$CB_SETUP_STORAGE"3
 
     echo "Done."
 }
@@ -374,7 +386,7 @@ cmd_setup_rootfs()
 
     # Untar the rootfs archive.
     echo "Extracting files onto the partition"
-    sudo tar xf "$debian_archive" -C "$ROOTFS_DIR" binary --strip=1
+    sudo bsdtar xf "$debian_archive" -C "$ROOTFS_DIR"
 
     echo "Done."
 }
@@ -438,7 +450,7 @@ cmd_build_kernel()
         make zImage modules dtbs $(jopt)
         arm_boot_image_blob
     else
-        make
+        make -j16
         arm64_boot_image_blob
     fi
 
